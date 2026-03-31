@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>めがらいポスト管理</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap');
+        body { font-family: 'Noto Sans JP', sans-serif; }
+        .post-body { max-height: 0; overflow: hidden; transition: max-height 0.4s ease-out, padding 0.3s ease-out; }
+        .post-body.open { max-height: 2000px; padding-top: 12px; padding-bottom: 12px; }
+        .copied { animation: flash 0.5s ease-out; }
+        @keyframes flash {
+            0% { background-color: #22c55e; color: white; }
+            100% { background-color: transparent; }
+        }
+        .category-btn.active { ring: 2px; }
+    </style>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen">
+    <!-- Password Gate -->
+    <div id="password-gate" class="fixed inset-0 bg-gray-950 z-[100] flex items-center justify-center">
+        <div class="bg-gray-900 border border-gray-700 rounded-xl p-8 max-w-sm w-full mx-4 text-center">
+            <h2 class="text-xl font-bold mb-2 flex items-center justify-center gap-2"><span class="text-2xl">🦁</span> めがらいポスト</h2>
+            <p class="text-gray-400 text-sm mb-6">パスワードを入力してください</p>
+            <input type="password" id="pw-input" placeholder="パスワード" class="w-full px-4 py-3 rounded-lg bg-gray-800 border border-gray-600 text-white text-center text-lg focus:outline-none focus:border-orange-500 mb-4" onkeydown="if(event.key==='Enter')checkPw()">
+            <button onclick="checkPw()" class="w-full py-3 rounded-lg bg-orange-600 hover:bg-orange-500 text-white font-bold">入る</button>
+            <p id="pw-error" class="text-red-400 text-sm mt-3 hidden">パスワードが違います</p>
+        </div>
+    </div>
+    <script>
+    const PW_HASH='ed9f2122e17b6196cd776e867833e8a385a9a37c72a4c7a40630523b792a191d';
+    async function sha256(text){
+        const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text));
+        return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+    }
+    async function checkPw(){
+        const input=document.getElementById('pw-input').value;
+        const hash=await sha256(input);
+        if(hash===PW_HASH){
+            localStorage.setItem('megarai-auth',hash);
+            document.getElementById('password-gate').style.display='none';
+        }else{
+            document.getElementById('pw-error').classList.remove('hidden');
+        }
+    }
+    if(localStorage.getItem('megarai-auth')===PW_HASH){document.getElementById('password-gate').style.display='none';}
+    else{document.getElementById('pw-input').focus();}
+    </script>
+    <!-- Header -->
+    <header class="sticky top-0 z-50 bg-gray-900/95 backdrop-blur border-b border-gray-800">
+        <div class="max-w-2xl mx-auto px-4 py-4">
+            <div class="flex items-center justify-between mb-3">
+                <h1 class="text-xl font-bold flex items-center gap-2">
+                    <span class="text-2xl">🦁</span> めがらいポスト
+                </h1>
+                <div class="flex items-center gap-3 text-sm text-gray-400">
+                    <span id="total-count"></span>
+                    <span id="unused-count"></span>
+                </div>
+            </div>
+            <!-- Category Filter -->
+            <div class="flex flex-wrap gap-2" id="category-filters">
+                <button onclick="filterCategory('all')" class="category-btn px-3 py-1 rounded-full text-sm bg-orange-600 text-white" data-category="all">すべて</button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Post List -->
+    <main class="max-w-2xl mx-auto px-4 py-4">
+        <div id="post-list" class="flex flex-col gap-2"></div>
+        <div id="empty-state" class="hidden text-center text-gray-500 py-20">
+            <p class="text-4xl mb-4">📭</p>
+            <p>投稿がありません</p>
+        </div>
+    </main>
+
+    <!-- Toast -->
+    <div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 bg-green-600 text-white px-6 py-3 rounded-full shadow-lg transform translate-y-20 opacity-0 transition-all duration-300 text-sm font-medium z-50">
+        コピーしました！
+    </div>
+
+    <script>
+    let posts = [];
+    let currentCategory = 'all';
+
+    const CATEGORY_COLORS = {
+        'サムネ': 'bg-red-900/50 text-red-300 border-red-800',
+        'YouTube': 'bg-rose-900/50 text-rose-300 border-rose-800',
+        'デザイン': 'bg-purple-900/50 text-purple-300 border-purple-800',
+        'クライアントワーク': 'bg-blue-900/50 text-blue-300 border-blue-800',
+        '仕事': 'bg-cyan-900/50 text-cyan-300 border-cyan-800',
+        'サロン': 'bg-amber-900/50 text-amber-300 border-amber-800',
+        '人間性': 'bg-emerald-900/50 text-emerald-300 border-emerald-800',
+    };
+
+    const CATEGORY_COLORS_ACTIVE = {
+        'サムネ': 'bg-red-600 text-white',
+        'YouTube': 'bg-rose-600 text-white',
+        'デザイン': 'bg-purple-600 text-white',
+        'クライアントワーク': 'bg-blue-600 text-white',
+        '仕事': 'bg-cyan-600 text-white',
+        'サロン': 'bg-amber-600 text-white',
+        '人間性': 'bg-emerald-600 text-white',
+    };
+
+    // Load posts
+    async function loadPosts() {
+        try {
+            const res = await fetch('/api/posts');
+            posts = await res.json();
+        } catch (e) {
+            // Fallback: load from static file
+            try {
+                const res = await fetch('posts.json');
+                posts = await res.json();
+            } catch (e2) {
+                posts = [];
+            }
+        }
+        // Load used state from localStorage
+        const usedState = JSON.parse(localStorage.getItem('megarai-used') || '{}');
+        posts.forEach(p => { if (usedState[p.id]) p.used = true; });
+        buildCategoryFilters();
+        renderPosts();
+    }
+
+    function buildCategoryFilters() {
+        const container = document.getElementById('category-filters');
+        const categories = [...new Set(posts.map(p => p.category))];
+        // Keep "all" button, add category buttons
+        container.innerHTML = `
+            <button onclick="filterCategory('all')" class="category-btn px-3 py-1 rounded-full text-sm bg-orange-600 text-white" data-category="all">すべて</button>
+        `;
+        categories.forEach(cat => {
+            const color = CATEGORY_COLORS[cat] || 'bg-gray-700 text-gray-300';
+            const btn = document.createElement('button');
+            btn.onclick = () => filterCategory(cat);
+            btn.className = `category-btn px-3 py-1 rounded-full text-sm border ${color}`;
+            btn.dataset.category = cat;
+            btn.textContent = cat;
+            container.appendChild(btn);
+        });
+    }
+
+    function filterCategory(cat) {
+        currentCategory = cat;
+        // Update button styles
+        document.querySelectorAll('.category-btn').forEach(btn => {
+            const btnCat = btn.dataset.category;
+            if (btnCat === cat) {
+                if (btnCat === 'all') {
+                    btn.className = 'category-btn px-3 py-1 rounded-full text-sm bg-orange-600 text-white';
+                } else {
+                    btn.className = `category-btn px-3 py-1 rounded-full text-sm ${CATEGORY_COLORS_ACTIVE[btnCat] || 'bg-gray-600 text-white'}`;
+                }
+            } else {
+                if (btnCat === 'all') {
+                    btn.className = 'category-btn px-3 py-1 rounded-full text-sm bg-gray-700 text-gray-300';
+                } else {
+                    const color = CATEGORY_COLORS[btnCat] || 'bg-gray-700 text-gray-300';
+                    btn.className = `category-btn px-3 py-1 rounded-full text-sm border ${color}`;
+                }
+            }
+        });
+        renderPosts();
+    }
+
+    function renderPosts() {
+        const list = document.getElementById('post-list');
+        const empty = document.getElementById('empty-state');
+        const filtered = currentCategory === 'all' ? posts : posts.filter(p => p.category === currentCategory);
+
+        // Update counts
+        const unused = posts.filter(p => !p.used).length;
+        document.getElementById('total-count').textContent = `全${posts.length}本`;
+        document.getElementById('unused-count').textContent = `残${unused}本`;
+
+        if (filtered.length === 0) {
+            list.innerHTML = '';
+            empty.classList.remove('hidden');
+            return;
+        }
+        empty.classList.add('hidden');
+
+        list.innerHTML = filtered.map(post => {
+            const catColor = CATEGORY_COLORS[post.category] || 'bg-gray-700 text-gray-300';
+            const usedClass = post.used ? 'opacity-40' : '';
+            const charCount = post.body.length;
+            return `
+                <div class="bg-gray-900 border border-gray-800 rounded-lg ${usedClass} hover:border-gray-600 transition-colors" data-id="${post.id}">
+                    <div class="px-4 py-3 cursor-pointer flex items-center justify-between gap-3" onclick="togglePost(${post.id})">
+                        <div class="flex items-center gap-3 min-w-0">
+                            <span class="text-xs px-2 py-0.5 rounded-full border whitespace-nowrap ${catColor}">${post.category}</span>
+                            <span class="text-sm font-medium truncate">${escapeHtml(post.title)}</span>
+                        </div>
+                        <div class="flex items-center gap-2 shrink-0">
+                            ${post.used ? '<span class="text-xs text-gray-500">使用済</span>' : ''}
+                            <svg class="w-4 h-4 text-gray-500 transform transition-transform post-chevron-${post.id}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </div>
+                    </div>
+                    <div class="post-body px-4 border-t border-gray-800/0" id="post-body-${post.id}">
+                        <pre class="whitespace-pre-wrap text-sm text-gray-300 leading-relaxed font-sans">${escapeHtml(post.body)}</pre>
+                        <div class="flex items-center justify-between mt-3 pt-3 border-t border-gray-800">
+                            <span class="text-xs text-gray-500">${charCount}文字</span>
+                            <div class="flex gap-2">
+                                <button onclick="toggleUsed(${post.id}, event)" class="text-xs px-3 py-1.5 rounded-md ${post.used ? 'bg-green-800 text-green-300' : 'bg-gray-800 text-gray-400 hover:text-white'}">
+                                    ${post.used ? '✓ 使用済' : '使用済にする'}
+                                </button>
+                                <button onclick="copyPost(${post.id}, event)" class="text-xs px-4 py-1.5 rounded-md bg-orange-600 hover:bg-orange-500 text-white font-medium">
+                                    📋 コピー
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function togglePost(id) {
+        const body = document.getElementById(`post-body-${id}`);
+        const chevron = document.querySelector(`.post-chevron-${id}`);
+        const isOpen = body.classList.contains('open');
+
+        // Close all others
+        document.querySelectorAll('.post-body.open').forEach(el => {
+            el.classList.remove('open');
+            el.style.borderTopColor = 'transparent';
+        });
+        document.querySelectorAll('[class*="post-chevron-"]').forEach(el => {
+            el.style.transform = 'rotate(0deg)';
+        });
+
+        if (!isOpen) {
+            body.classList.add('open');
+            body.style.borderTopColor = '';
+            if (chevron) chevron.style.transform = 'rotate(180deg)';
+        }
+    }
+
+    function copyPost(id, event) {
+        event.stopPropagation();
+        const post = posts.find(p => p.id === id);
+        if (!post) return;
+
+        // タイトルが本文の1行目と異なる場合はタイトルを先頭に付ける
+        const firstLine = post.body.split('\n')[0];
+        const fullText = (post.title === firstLine) ? post.body : post.title + '\n\n' + post.body;
+
+        // Xの「さらに表示」テクニック：2行目の後にスペースを挿入して140文字を超えさせる
+        const xText = addShowMoreSpaces(fullText);
+        copyToClipboard(xText).then(() => {
+            showToast();
+        });
+    }
+
+    function addShowMoreSpaces(text) {
+        const lines = text.split('\n');
+        // 最初の空でない行（タイトル行）を見つける
+        let firstLineIndex = -1;
+        for (let i = 0; i < lines.length; i++) {
+            if (lines[i].trim()) {
+                firstLineIndex = i;
+                break;
+            }
+        }
+
+        if (firstLineIndex === -1) return text;
+
+        // 1行目の文字数を取得
+        const firstLineLen = lines[firstLineIndex].length;
+
+        // 1行目の後ろに半角スペースを入れて140文字を超えさせる
+        // 改行も1文字としてカウントされるので、1行目 + 改行 + スペースで141文字以上に
+        if (firstLineLen < 140) {
+            const spacesNeeded = 141 - firstLineLen;
+            lines[firstLineIndex] = lines[firstLineIndex] + ' '.repeat(spacesNeeded);
+        }
+
+        return lines.join('\n');
+    }
+
+    function copyToClipboard(text) {
+        // Try modern API first, fallback to textarea method
+        if (navigator.clipboard && window.isSecureContext) {
+            return navigator.clipboard.writeText(text);
+        }
+        // Fallback for HTTP
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.left = '-9999px';
+        textarea.style.top = '-9999px';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        return new Promise((resolve, reject) => {
+            document.execCommand('copy') ? resolve() : reject();
+            document.body.removeChild(textarea);
+        });
+    }
+
+    function toggleUsed(id, event) {
+        event.stopPropagation();
+        const post = posts.find(p => p.id === id);
+        if (!post) return;
+        post.used = !post.used;
+        saveUsedState();
+        renderPosts();
+    }
+
+    function saveUsedState() {
+        const usedState = {};
+        posts.forEach(p => { if (p.used) usedState[p.id] = true; });
+        localStorage.setItem('megarai-used', JSON.stringify(usedState));
+    }
+
+    function showToast() {
+        const toast = document.getElementById('toast');
+        toast.style.transform = 'translate(-50%, 0)';
+        toast.style.opacity = '1';
+        setTimeout(() => {
+            toast.style.transform = 'translate(-50%, 80px)';
+            toast.style.opacity = '0';
+        }, 1500);
+    }
+
+    function escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+
+    // Init
+    loadPosts();
+    </script>
+</body>
+</html>
