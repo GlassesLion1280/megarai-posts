@@ -30,7 +30,7 @@
         </div>
     </div>
     <script>
-    const PW_HASH='030b6a3a755125e26faa1b21e043065fe67f6a607df669480a42eb8d4368fa27';
+    const PW_HASH='54d29735e9749ea2dd337b3e141dbbd51eda7e3a497a35dbcc031aeb80136390';
     async function sha256(text){
         const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text));
         return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
