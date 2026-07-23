@@ -30,17 +30,22 @@
         </div>
     </div>
     <script>
-    const PW='PnxC14ULuQO#Rk';
-    function checkPw(){
-        var input=document.getElementById('pw-input').value;
-        if(input===PW){
-            localStorage.setItem('megarai-auth',PW);
+    const PW_HASH='54d29735e9749ea2dd337b3e141dbbd51eda7e3a497a35dbcc031aeb80136390';
+    async function sha256(text){
+        const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text));
+        return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+    }
+    async function checkPw(){
+        const input=document.getElementById('pw-input').value;
+        const hash=await sha256(input);
+        if(hash===PW_HASH){
+            localStorage.setItem('megarai-auth',hash);
             document.getElementById('password-gate').style.display='none';
         }else{
             document.getElementById('pw-error').classList.remove('hidden');
         }
     }
-    if(localStorage.getItem('megarai-auth')===PW){document.getElementById('password-gate').style.display='none';}
+    if(localStorage.getItem('megarai-auth')===PW_HASH){document.getElementById('password-gate').style.display='none';}
     else{document.getElementById('pw-input').focus();}
     </script>
     <!-- Header -->
