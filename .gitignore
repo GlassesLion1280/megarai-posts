@@ -1,0 +1,16 @@
+# 機密・下書きデータ（公開リポに載せない）
+# note.com のプレビューアクセスキーを含む・未公開下書き等
+note_articles.json
+note_posts.json
+new_posts_*.json
+public_note_posts*.json
+
+# 環境変数・秘密情報
+.env
+.env.*
+*.key
+*.pem
+*.secret
+
+# OS/エディタ
+.DS_Store

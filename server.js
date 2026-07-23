@@ -25,7 +25,22 @@ const server = http.createServer((req, res) => {
     } else if (req.url === '/api/posts') {
         filePath = path.join(__dirname, 'posts.json');
     } else {
-        filePath = path.join(__dirname, req.url);
+        // パストラバーサル対策: クエリ除去→デコード→正規化して __dirname 配下に限定
+        let reqPath;
+        try {
+            reqPath = decodeURIComponent(req.url.split('?')[0]);
+        } catch (e) {
+            res.writeHead(400);
+            res.end('Bad Request');
+            return;
+        }
+        const resolved = path.resolve(__dirname, '.' + path.normalize('/' + reqPath));
+        if (resolved !== __dirname && !resolved.startsWith(__dirname + path.sep)) {
+            res.writeHead(403);
+            res.end('Forbidden');
+            return;
+        }
+        filePath = resolved;
     }
 
     const ext = path.extname(filePath);

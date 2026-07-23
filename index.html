@@ -30,22 +30,17 @@
         </div>
     </div>
     <script>
-    const PW_HASH='54d29735e9749ea2dd337b3e141dbbd51eda7e3a497a35dbcc031aeb80136390';
-    async function sha256(text){
-        const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text));
-        return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
-    }
-    async function checkPw(){
-        const input=document.getElementById('pw-input').value;
-        const hash=await sha256(input);
-        if(hash===PW_HASH){
-            localStorage.setItem('megarai-auth',hash);
+    const PW='PnxC14ULuQO#Rk';
+    function checkPw(){
+        var input=document.getElementById('pw-input').value;
+        if(input===PW){
+            localStorage.setItem('megarai-auth',PW);
             document.getElementById('password-gate').style.display='none';
         }else{
             document.getElementById('pw-error').classList.remove('hidden');
         }
     }
-    if(localStorage.getItem('megarai-auth')===PW_HASH){document.getElementById('password-gate').style.display='none';}
+    if(localStorage.getItem('megarai-auth')===PW){document.getElementById('password-gate').style.display='none';}
     else{document.getElementById('pw-input').focus();}
     </script>
     <!-- Header -->
@@ -192,7 +187,7 @@
                 <div class="bg-gray-900 border border-gray-800 rounded-lg ${usedClass} hover:border-gray-600 transition-colors" data-id="${post.id}">
                     <div class="px-4 py-3 cursor-pointer flex items-center justify-between gap-3" onclick="togglePost(${post.id})">
                         <div class="flex items-center gap-3 min-w-0">
-                            <span class="text-xs px-2 py-0.5 rounded-full border whitespace-nowrap ${catColor}">${post.category}</span>
+                            <span class="text-xs px-2 py-0.5 rounded-full border whitespace-nowrap ${catColor}">${escapeHtml(post.category)}</span>
                             <span class="text-sm font-medium truncate">${escapeHtml(post.title)}</span>
                         </div>
                         <div class="flex items-center gap-2 shrink-0">
